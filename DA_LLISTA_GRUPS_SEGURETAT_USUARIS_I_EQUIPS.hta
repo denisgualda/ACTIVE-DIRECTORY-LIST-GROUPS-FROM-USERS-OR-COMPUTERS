@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>LLISTAT GRUPS SEGURETAT D'USUARIS / EQUIPS</title>
+ 	 <meta charset="UTF-8">
+    <HTA:APPLICATION
+        APPLICATIONNAME = "LLISTAT GRUPS SEGURETAT D'USUARIS"
+		id="LLISTAT GRUPS SEGURETAT D'USUARIS"
+		name="LLISTAT GRUPS SEGURETAT D'USUARIS"
+    />
+	
+	<script language="vbscript">
+	On Error Resume Next
+	'CONSTANTS PER TRADUCCIO DE NOMS'
+	Const ADS_NAME_INITTYPE_GC = 3
+	Const ADS_NAME_TYPE_NT4 = 3
+	Const ADS_NAME_TYPE_1779 = 1
+
+	
+	Dim objFSO, objFile, strFileName
+	
+'-------------------------------------'
+'INICI BOTO EXECUTA'
+	Sub Executa
+
+		strText = txt_entrada.Value
+	    arrLines = Split(strText, vbCrLf)
+	    For Each strLine in arrLines
+		
+		'Llista grups USUARIS'
+			if usuaris.checked = true then  	' SI EL button radio es usuaris'
+		
+				StrUserName = strLine
+				resultat = resultat & vbCRLF
+			    resultat = resultat & StrUserName & vbCrLf
+			    resultat = resultat & vbCrLf
+		 
+
+				Set ObjRootDSE = GetObject("LDAP://RootDSE") 
+				StrDomName = Trim(ObjRootDSE.Get("DefaultNamingContext")) 
+				Set ObjRootDSE = Nothing 
+
+				StrSQL = "Select ADsPath From 'LDAP://" & StrDomName & "' Where ObjectCategory = 'User' AND SAMAccountName = '" & StrUserName & "'" 
+				 
+				 Set ObjConn = CreateObject("ADODB.Connection") 
+				 ObjConn.Provider = "ADsDSOObject":    ObjConn.Open "Active Directory Provider" 
+				 Set ObjRS = CreateObject("ADODB.Recordset") 
+				 ObjRS.Open StrSQL, ObjConn 
+					 
+				 If Not ObjRS.EOF Then 
+				    ObjRS.MoveLast:    ObjRS.MoveFirst 
+			        
+				    Set ObjUser = GetObject (Trim(ObjRS.Fields("ADsPath").Value)) 
+				    Set GroupCollection = ObjUser.Groups 
+				    For Each ObjGroup In GroupCollection 
+				        If InStr(ObjGroup.CN,filtre.value) > 0 Then
+		           			resultat = resultat & ObjGroup.CN & vbCrLf
+		     			End If
+
+					 	txt_sortida.value = resultat
+					    
+					Next 
+
+					Set ObjGroup = Nothing:    Set GroupCollection = Nothing:    Set ObjUser = Nothing 
+					        
+				Else 
+				    resultat = resultat & "Lusuari: " & StrUserName & " no sha trobat al domini" & vbCrLf
+				    txt_sortida.value = resultat 
+				End If 
+					
+				ObjRS.Close:    Set ObjRS = Nothing 
+					ObjConn.Close:    Set ObjConn = Nothing 
+				End if
+
+
+		'LLISTA GRUPS EQUIP'		
+		if equips.checked = true then	'SI check button radio es EQUIP'
+
+			strComputer = strLine
+			resultat = resultat & vbCRLF
+			resultat = resultat & strComputer & vbCrLf
+			resultat = resultat & vbCrLf
+
+			Set objSystemInfo = CreateObject("ADSystemInfo") 
+			strDomain = objSystemInfo.DomainShortName
+
+
+			'obtenir DistinguishedName de lequip'
+			strDNComputer = "LDAP://" & getComputerDN(strComputer,strDomain)
+
+			'consulta grups'
+			Set objComputer=GetObject(strDNComputer)
+			Set colGroups = objComputer.Groups
+
+			For Each ObjGroup in colGroups
+				resultat = resultat & objGroup.CN & vbCrLf
+				
+				'crida funcio per consultar grups'
+				GetNested(objGroup)
+			Next
+				
+			txt_sortida.value = resultat
+			
+
+		end if 
+
+
+
+
+		Next
+	
+
+	'Llista grups EQUIPS'
+
+
+
+
+End Sub
+
+
+
+
+
+
+
+
+'FI BOTO EXECUTA'
+'-------------------------------------'
+
+
+'FUNCIO PER LLISTAR GRUPS DE SEGURETAT DE EQUIP' 
+Function GetNested(objGroup)
+
+    On Error Resume Next
+    colMembers = objGroup.GetEx("memberOf")
+    For Each strMember in colMembers
+        strPath = "LDAP://" & strMember
+        Set objNestedGroup = GetObject(strPath)
+        WScript.Echo objNestedGroup.CN
+        'GetNested(objNestedGroup)
+    Next
+End Function
+'-------------------------------------'
+
+'FUNCIO OBTENIR DISTINGUESHED NAME EQUIP'
+function getComputerDN(byval strComputer,byval strDomain)
+	' Function to get the distinguished name of a computer'
+	' from the NETBIOS name of the computer (strcomputer)'
+	' and the NETBIOS name of the domain (strDomain) using'
+	' name translate'
+
+	Set objTrans = CreateObject("NameTranslate")
+	' Initialize name translate using global catalog'
+	objTrans.Init ADS_NAME_INITTYPE_GC, ""
+	' Input computer name (NT Format)'
+	objTrans.Set ADS_NAME_TYPE_NT4, strDomain & "\" & strComputer & "$"
+	' Get Distinguished Name.'
+	getComputerDN = objTrans.Get(ADS_NAME_TYPE_1779)
+end function
+'-------------------------------------'
+
+
+	
+	</script>
+	
+	</head>
+ 
+<body>
+    <h1>LLISTA GRUPS DE SEGURETAT D'USUARIS / EQUIPS </h1>
+    <p><i>* No pot quedar cap espai ni linia en blanc al final del llistat.</i></p>
+	
+	<textarea name="txt_entrada" rows=10 cols="50" ></textarea>
+	</textarea>
+	<br>
+	<br>
+	<input type="radio" name="radio" id="usuaris" value="usuaris" checked><b>Usuaris</b>
+	<input type="radio" name="radio" id="equips" value="equips"><b>Equips</b>
+	<br>
+	<br>
+	<b>Filtra:</b>  (només usuaris)<br><textarea name = "filtre" rows=1 cols=50></textarea> <br> <br>
+    <input type="button" value="  Llista grups  " onclick="Executa">
+
+
+    <!-- CAIXA TEXT RESULTAT -->
+    <br>
+    <br>
+    <textarea name="txt_sortida" rows=50  cols=90></textarea>
+	
+</body>
+ 
+</html>
